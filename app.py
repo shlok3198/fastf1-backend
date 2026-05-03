@@ -25,61 +25,28 @@ def health():
 
 @app.get("/api/live")
 def live_data():
-    """
-    Returns latest available Leclerc telemetry for the Miami race.
-
-    During/after a session this behaves as replay/latest data:
-    - status = live-ish/latest when timing is available
-    - status = no-data when Leclerc data is not available yet
-    """
     try:
         session = get_session(2026, "Miami", "R")
-        session.load(laps=True, telemetry=True, weather=False, messages=False)
+
+        # ONLY load laps (lightweight)
+        session.load(laps=True, telemetry=False, weather=False, messages=False)
 
         leclerc_laps = session.laps.pick_driver("16")
 
-        if leclerc_laps is None or leclerc_laps.empty:
-            return {
-                "status": "no-data",
-                "message": "No Leclerc laps available yet."
-            }
+        if leclerc_laps.empty:
+            return {"status": "no-data"}
 
-        # Prefer the latest completed lap. Fall back to fastest if needed.
-        completed = leclerc_laps[leclerc_laps["LapTime"].notna()]
-        if completed.empty:
-            lap = leclerc_laps.pick_fastest()
-        else:
-            lap = completed.sort_values("LapNumber").iloc[-1]
-
-        telemetry = lap.get_car_data().add_distance()
-
-        if telemetry is None or telemetry.empty:
-            return {
-                "status": "no-telemetry",
-                "driver": "Charles Leclerc",
-                "driver_number": "16",
-                "lap": int(lap["LapNumber"]) if "LapNumber" in lap else None,
-                "message": "Lap exists, but telemetry is not available."
-            }
-
-        latest = telemetry.iloc[-1]
+        latest_lap = leclerc_laps[leclerc_laps["LapTime"].notna()].iloc[-1]
 
         return {
             "status": "replay",
-            "session": "Miami Grand Prix",
             "driver": "Charles Leclerc",
-            "driver_number": "16",
-            "lap": int(lap["LapNumber"]),
-            "speed": float(latest.get("Speed", 0)),
-            "throttle": float(latest.get("Throttle", 0)),
-            "brake": bool(latest.get("Brake", False)),
-            "gear": int(latest.get("nGear", 0)),
-            "distance": float(latest.get("Distance", 0)),
-            "source": "FastF1 latest available telemetry"
+            "lap": int(latest_lap["LapNumber"]),
+            "lap_time": str(latest_lap["LapTime"]),
+            "sector1": str(latest_lap["Sector1Time"]),
+            "sector2": str(latest_lap["Sector2Time"]),
+            "sector3": str(latest_lap["Sector3Time"]),
         }
 
     except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+        return {"error": str(e)}
