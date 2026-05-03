@@ -1,10 +1,12 @@
 from fastapi import FastAPI
+import os
 import fastf1
 from fastf1 import get_session
 
 app = FastAPI()
 
-fastf1.Cache.enable_cache('./cache')
+os.makedirs("./cache", exist_ok=True)
+fastf1.Cache.enable_cache("./cache")
 
 @app.get("/health")
 def health():
