@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import re
 import pandas as pd
 import fastf1
 from fastf1 import get_session
@@ -41,21 +42,40 @@ def safe_int(value):
         return None
 
 
+def safe_str(value):
+    value = clean(value)
+    if value is None:
+        return None
+    return str(value)
+
+
 def format_td(value):
     value = clean(value)
     if value is None:
         return None
+
+    # pandas / datetime timedelta
     try:
         total_seconds = value.total_seconds()
     except Exception:
         text = str(value)
-        if text.startswith("0 days "):
-            text = text.replace("0 days ", "")
-        return text
+
+        # FastF1/pandas can serialize Timedelta as ISO duration: P0DT0H1M49.834S
+        iso = re.match(r"^P(?:\d+D)?T(?:(\d+)H)?(?:(\d+)M)?([\d.]+)S$", text)
+        if iso:
+            hours = int(iso.group(1) or 0)
+            minutes = int(iso.group(2) or 0)
+            seconds_float = float(iso.group(3) or 0)
+            total_seconds = hours * 3600 + minutes * 60 + seconds_float
+        else:
+            if text.startswith("0 days "):
+                text = text.replace("0 days ", "")
+            return text
 
     minutes = int(total_seconds // 60)
     seconds = int(total_seconds % 60)
     ms = int(round((total_seconds - int(total_seconds)) * 1000))
+
     if ms == 1000:
         seconds += 1
         ms = 0
@@ -63,13 +83,6 @@ def format_td(value):
     if minutes > 0:
         return f"{minutes}:{seconds:02d}.{ms:03d}"
     return f"{seconds}.{ms:03d}"
-
-
-def safe_str(value):
-    value = clean(value)
-    if value is None:
-        return None
-    return str(value)
 
 
 def pick_tyres(leclerc_laps, lap):
@@ -124,8 +137,6 @@ def next_session():
         schedule = schedule.copy()
         schedule["EventDateUtc"] = pd.to_datetime(schedule["EventDate"], utc=True, errors="coerce")
 
-        # If Miami is already complete but upstream schedule still says its start is in the future,
-        # skip Miami and choose the next event after Miami's round/order.
         if miami_is_complete():
             miami_rows = schedule[schedule["EventName"].astype(str).str.contains("Miami", case=False, na=False)]
             if not miami_rows.empty:
